@@ -39,6 +39,7 @@ async def GetAndPossiblyRefreshToken():
             async with session.post(token_url, headers=headers, data=data) as response:
                 json_response = await response.json()
                 DB["access_token"] = json_response["access_token"]
+                DB["refresh_token"] = json_response["refresh_token"]
                 DB["time_to_refresh"] = datetime.now() + timedelta(seconds=json_response["expires_in"])
             print(f"Token refreshed at {datetime.now()}")
     return DB["access_token"]
