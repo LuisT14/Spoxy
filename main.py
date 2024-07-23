@@ -10,8 +10,8 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import RedirectResponse, StreamingResponse
 
 # Simple proxy for spotify api.
-CLIENT_ID = "5090dc58e7f342a0af05675e297fc227"
-CLIENT_SECRET = "13e9147679f3411faee160dfb1b73f91"
+CLIENT_ID = ""
+CLIENT_SECRET = ""
 SPOTIFY_API_URL = "https://api.spotify.com/"
 SCOPES = "user-modify-playback-state user-read-playback-state"
 CLIENT_BASE64 = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
