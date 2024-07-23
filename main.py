@@ -6,12 +6,12 @@ from PIL import Image
 import base64
 from urllib.parse import urlencode
 from datetime import datetime, timedelta
-from fastapi import FastAPI, Response
-from fastapi.responses import RedirectResponse
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import RedirectResponse, StreamingResponse
 
 # Simple proxy for spotify api.
-CLIENT_ID = ""
-CLIENT_SECRET = ""
+CLIENT_ID = "5090dc58e7f342a0af05675e297fc227"
+CLIENT_SECRET = "13e9147679f3411faee160dfb1b73f91"
 SPOTIFY_API_URL = "https://api.spotify.com/"
 SCOPES = "user-modify-playback-state user-read-playback-state"
 CLIENT_BASE64 = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
@@ -67,31 +67,54 @@ async def Callback(code: str | None = None, error: str | None = None):
                 DB["started"] = True
                 return "Authorization code received and access token obtained"
 
-# Proxy for spotify api.
 @app.get("/spotify/{endpoint:path}")
-async def CurrentState(endpoint: str):
-    token = await GetAndPossiblyRefreshToken()
-    if not token:
-        return {"error": "No access token"}
-    print(f"Getting {SPOTIFY_API_URL}{endpoint}")
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{SPOTIFY_API_URL}{endpoint}", headers={"Authorization": f"Bearer {token}"}) as response:
-            if response.status == 200:
-                return await response.json()
-            return {"error": f"{response.status} {response.reason}"}
+async def ProxyGet(request: Request, endpoint: str):
+    return await ProxyRequest(request, endpoint, "GET")
 
-# Proxy for spotify api.
 @app.post("/spotify/{endpoint:path}")
-async def CurrentState(endpoint: str, data: dict):
+async def ProxyPost(request: Request, endpoint: str):
+    return await ProxyRequest(request, endpoint, "POST")
+
+@app.put("/spotify/{endpoint:path}")
+async def ProxyPut(request: Request, endpoint: str):
+    return await ProxyRequest(request, endpoint, "PUT")
+
+async def ProxyRequest(request: Request, endpoint: str, method: str):
+    # Get auth token for spotify api.
     token = await GetAndPossiblyRefreshToken()
     if not token:
         return {"error": "No access token"}
-    print(f"Posting {SPOTIFY_API_URL}{endpoint}")
+    
+    url = f"{SPOTIFY_API_URL}{endpoint}"
+    # Use all headers from the request except for host and content-length.
+    headers = {key: value for key, value in request.headers.items() if key.lower() not in ['host', 'content-length']}
+    # Add token to the headers.
+    headers["Authorization"] = f"Bearer {token}"
+
     async with aiohttp.ClientSession() as session:
-        async with session.post(f"{SPOTIFY_API_URL}{endpoint}", headers={"Authorization": f"Bearer {token}"}, data=data) as response:
-            if response.status == 200:
-                return await response.json()
-            return {"error": f"{response.status} {response.reason}"}
+        # Create the request.
+        req_kwargs = {
+            "url": url,
+            "headers": headers,
+            "params": request.query_params,
+        }
+        # If the method is POST or PUT, add the body to the request.
+        if method in ["POST", "PUT"]:
+            req_kwargs["data"] = await request.body()
+
+        async with session.request(method, **req_kwargs) as response:
+            # Get the headers from the response.
+            response_headers = dict(response.headers)
+            # Remove problematic headers
+            response_headers.pop('Content-Encoding', None)
+            response_headers.pop('Transfer-Encoding', None)
+            # Read conent and send it as a response.
+            content = await response.read()
+            return Response(
+                content=content,
+                status_code=response.status,
+                headers=response_headers,
+            )
 
 # Resize image and turn into jpeg. This is used to get pico/pico display compatible images from the spotify api
 @app.get("/image")
